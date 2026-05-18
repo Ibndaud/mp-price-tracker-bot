@@ -44,6 +44,25 @@ async def init_db():
         await db.commit()
         print("База данных успешно инициализирована!")
 
+async def add_user(user_id: int, username: str, first_name: str):
+    """Добавляет пользователя в БД, если его там еще нет"""
+    async with aiosqlite.connect(DB_NAME) as db:
+        # INSERT OR IGNORE означает: "Вставь данные, а если такой id уже есть - просто проигнорируй и не выдавай ошибку"
+        await db.execute(
+            'INSERT OR IGNORE INTO users (id, username, first_name) VALUES (?, ?, ?)',
+            (user_id, username, first_name)
+        )
+        await db.commit()
+
+async def add_item(user_id: int, url: str, last_price: str):
+    """Добавляет новую ссылку на товар для конкретного пользователя"""
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute(
+            'INSERT INTO items (user_id, url, last_price) VALUES (?, ?, ?)',
+            (user_id, url, last_price)
+        )
+        await db.commit()
+        
 # Блок для ручного тестирования
 if __name__ == "__main__":
     import asyncio

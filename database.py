@@ -54,12 +54,12 @@ async def add_user(user_id: int, username: str, first_name: str):
         )
         await db.commit()
 
-async def add_item(user_id: int, url: str, last_price: str):
+async def add_item(user_id: int, url: str, name: str, last_price: str):
     """Добавляет новую ссылку на товар для конкретного пользователя"""
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute(
-            'INSERT INTO items (user_id, url, last_price) VALUES (?, ?, ?)',
-            (user_id, url, last_price)
+            'INSERT INTO items (user_id, url, name, last_price) VALUES (?, ?, ?, ?)',
+            (user_id, url, name, last_price)
         )
         await db.commit()
         

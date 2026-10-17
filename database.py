@@ -1,5 +1,7 @@
 import aiosqlite
 
+from utils import get_steam_app_id
+
 # Имя файла нашей базы данных (создастся автоматически рядом с кодом)
 DB_NAME = "price_tracker.db"
 
@@ -37,6 +39,7 @@ async def init_db():
                 url TEXT,
                 name TEXT,
                 last_price TEXT,
+                steam_app_id INTEGER,
                 FOREIGN KEY(user_id) REFERENCES users(id) 
             )
         ''')
@@ -59,10 +62,11 @@ async def add_user(user_id: int, username: str, first_name: str):
 
 async def add_item(user_id: int, url: str, name: str, last_price: str):
     """Добавляет новую ссылку на товар для конкретного пользователя"""
+    steam_app_id = get_steam_app_id(url)
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute(
-            'INSERT INTO items (user_id, url, name, last_price) VALUES (?, ?, ?, ?)',
-            (user_id, url, name, last_price)
+            'INSERT INTO items (user_id, url, name, last_price, steam_app_id) VALUES (?, ?, ?, ?, ?)',
+            (user_id, url, name, last_price, steam_app_id)
         )
         await db.commit()
 
@@ -109,6 +113,27 @@ async def delete_item(item_id: int, user_id: int) -> bool:
         # rowcount — сколько строк затронул запрос
         # Если 0 — товар не найден
         return cursor.rowcount > 0
+
+
+async def get_item_by_app_id(user_id: int, steam_app_id: int) -> dict | None:
+
+    async with aiosqlite.connect(DB_NAME) as db:
+
+        db.row_factory = aiosqlite.Row
+
+        async with db.execute(
+            '''
+            SELECT id, name, url, last_price
+            FROM items
+            WHERE user_id = ? AND steam_app_id = ?
+            ''',
+            (user_id, steam_app_id)
+        ) as cursor:
+
+            row = await cursor.fetchone()
+
+            return dict(row) if row else None
+        
         
 # Блок для ручного тестирования
 if __name__ == "__main__":

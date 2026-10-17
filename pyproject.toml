@@ -1,13 +1,25 @@
 [project]
 name = "mp-price-tracker-bot"
 version = "0.1.0"
+description = "Telegram-бот для отслеживания цен на игры в Steam (aiogram 3, aiosqlite)"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Ibndaud" },
+]
 requires-python = ">=3.10"
 dependencies = [
     "aiogram>=3.31.0",
     "aiohttp>=3.14.5",
     "aiosqlite>=0.22.1",
-    "asyncio>=4.0.0",
-    "bs4>=0.0.2",
-    "logging>=0.4.9.6",
+    "beautifulsoup4>=4.13",
     "python-dotenv>=1.2.4",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+# E4/E7/E9 — pycodestyle (ошибки и стиль), F — pyflakes (реальные баги).
+select = ["E4", "E7", "E9", "F"]

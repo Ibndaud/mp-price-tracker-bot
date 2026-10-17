@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  lint:
+    name: Линтинг (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Получить код
+        uses: actions/checkout@v4
+
+      - name: Установить uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Проверить код ruff
+        run: uvx ruff check .
+
+  smoke:
+    name: Smoke-тесты (установка и импорт)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Получить код
+        uses: actions/checkout@v4
+
+      - name: Установить Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Установить uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Установить зависимости из uv.lock
+        run: uv sync
+
+      - name: Проверить синтаксис всех модулей
+        run: uv run python -m compileall main.py parser.py database.py keyboards.py utils.py migrate.py
+
+      - name: Импортировать модули бота
+        env:
+          BOT_TOKEN: "123456:ci-smoke"
+        run: uv run python -c "import utils, parser, database, keyboards, main"

@@ -8,8 +8,12 @@ from aiogram.filters import CommandStart, Command
 from aiogram.types import CallbackQuery
 
 from parser import get_steam_price
-from database import init_db, add_user, add_item, get_user_items, delete_item
+from database import (
+    init_db, add_user, add_item, get_user_items, delete_item, 
+    get_item_by_app_id
+    )
 from keyboards import get_items_keyboard
+from utils import get_steam_app_id
 
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -41,7 +45,8 @@ async def handle_start(message: types.Message):
     # message.answer - отправляет сообщение в тот же чат, откуда пришел запрос
     await message.answer(
         f"Привет, {message.from_user.first_name}! 👋\n"
-        f"Я бот для отслеживания цен. Пришли мне ссылку на игру в Steam 🎮, и я буду за ней следить!"
+        f"Я бот для отслеживания цен. Пришли мне ссылку на игру в Steam 🎮, и "
+        "я буду за ней следить!"
         )
 
 
@@ -111,7 +116,9 @@ async def handle_delete_callback(callback: CallbackQuery):
             text = "📋 Твои отслеживаемые игры:\n\n"
             for item in items:
                 name = item['name'] or "Без названия"
-                text += f"🎮 {name}\n💰 {item['last_price']}\n🔗 {item['url']}\n\n"
+                text += (
+                    f"🎮 {name}\n💰 {item['last_price']}\n🔗 {item['url']}\n\n"
+                    )
 
             text += "Нажми на кнопку ниже, чтобы удалить игру."
             
@@ -124,11 +131,29 @@ async def handle_delete_callback(callback: CallbackQuery):
 # 5. Фильтр F.text.contains ищет сообщения, в которых есть кусок текста "steampowered.com"
 @dp.message(F.text.contains("steampowered.com"))
 async def handle_steam_link(message: types.Message):
-    # 1. Отправляем сообщение-заглушку, чтобы пользователь знал, что бот не завис
-    wait_msg = await message.answer("⏳ Проверяю цену, подожди пару секунд...")
-    
-    # 2. Берем текст сообщения (пока предполагаем, что пользователь прислал только ссылку)
-    url = message.text
+    # 1. Берем текст сообщения (пока предполагаем, что пользователь прислал только ссылку)
+    url = message.text.strip()
+
+    # Получаем Steam App ID
+    steam_app_id = get_steam_app_id(url)
+
+    if steam_app_id is None:
+        await message.answer("❌ Некорректная ссылка Steam.")
+        return
+
+    # 2. Проверяем, есть ли игра в отслеживании
+    user_id = message.from_user.id
+    existing_item = await get_item_by_app_id(user_id, steam_app_id)
+
+    if existing_item:
+        await message.answer(
+            f"⚠️ Игра {existing_item['name']} уже отслеживается!"
+            )
+        return
+    else:
+        # Отправляем сообщение-заглушку, чтобы пользователь знал, что бот не завис
+        wait_msg = await message.answer("⏳ Проверяю цену, подожди пару секунд...")
+
     
     # 3. Вызываем нашу функцию парсера
     title, price = await get_steam_price(url)
@@ -146,20 +171,28 @@ async def handle_steam_link(message: types.Message):
             user_id = message.from_user.id, 
             url = url, 
             name = title,
-            last_price = price
+            last_price = price,
+            steam_app_id = steam_app_id
             )
-        await wait_msg.edit_text(f"✅ Товар найден и добавлен в базу!\n"
-                                 f"Название: {title}\n"
-                                 f"Текущая цена: *{price}*\n\n"
-                                 f"💰 Теперь я буду проверять её каждый день.")
+        await wait_msg.edit_text(
+            f"✅ Товар найден и добавлен в базу!\n"
+            f"Название: {title}\n"
+            f"Текущая цена: {price}\n\n"
+            f"💰 Теперь я буду проверять её каждый день."
+            )
     else:
-        await wait_msg.edit_text("❌ Не удалось получить цену. Проверь ссылку или попробуй другую.")
+        await wait_msg.edit_text(
+            "❌ Не удалось получить цену. Проверь ссылку или попробуй другую."
+            )
 
 
 # 6. Если пользователь пришлет любой другой текст (не команду и не ссылку на Steam)
 @dp.message()
 async def handle_other_messages(message: types.Message):
-    await message.answer("Пока я понимаю только ссылки на Steam (steampowered.com). Пришли мне ссылку!")
+    await message.answer(
+        "Пока я понимаю только ссылки на Steam (steampowered.com). "
+        "Пришли мне ссылку!"
+        )
 
 
 # Функция запуска бота

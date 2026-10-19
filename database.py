@@ -1,6 +1,7 @@
 import aiosqlite
+import logging
 
-from utils import get_steam_app_id
+logger = logging.getLogger(__name__)
 
 # Имя файла нашей базы данных (создастся автоматически рядом с кодом)
 DB_NAME = "price_tracker.db"
@@ -32,21 +33,29 @@ async def init_db():
         # url - сама ссылка на товар
         # name - название товара (чтобы красиво писать в уведомлении)
         # last_price - последняя известная цена (может быть пустой - NULL, пока мы её не спарсили)
+        # steam_app_id - уникальный идентификатор игры в steam, получаемый из url
         await db.execute('''
             CREATE TABLE IF NOT EXISTS items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                url TEXT,
+                user_id INTEGER NOT NULL,
+                url TEXT NOT NULL,
                 name TEXT,
                 last_price TEXT,
-                steam_app_id INTEGER,
-                FOREIGN KEY(user_id) REFERENCES users(id) 
+                steam_app_id INTEGER NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             )
+        ''')
+        await db.execute('''
+            CREATE INDEX IF NOT EXISTS idx_items_user_id ON items(user_id);
+        ''')
+        await db.execute('''
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_user_steam_app
+            ON items(user_id, steam_app_id);
         ''')
         
         # Сохраняем (коммитим) изменения в файл
         await db.commit()
-        print("База данных успешно инициализирована!")
+        logger.info("База данных успешно инициализирована!")
 
 
 async def add_user(user_id: int, username: str, first_name: str):
@@ -60,15 +69,21 @@ async def add_user(user_id: int, username: str, first_name: str):
         await db.commit()
 
 
-async def add_item(user_id: int, url: str, name: str, last_price: str):
+async def add_item(
+        user_id: int, url: str, name: str, last_price: str, steam_app_id: int
+        ) -> bool:
     """Добавляет новую ссылку на товар для конкретного пользователя"""
-    steam_app_id = get_steam_app_id(url)
     async with aiosqlite.connect(DB_NAME) as db:
-        await db.execute(
-            'INSERT INTO items (user_id, url, name, last_price, steam_app_id) VALUES (?, ?, ?, ?, ?)',
+        cursor = await db.execute(
+            '''
+            INSERT OR IGNORE INTO items 
+            (user_id, url, name, last_price, steam_app_id) 
+            VALUES (?, ?, ?, ?, ?)
+            ''',
             (user_id, url, name, last_price, steam_app_id)
         )
         await db.commit()
+        return cursor.rowcount > 0
 
 
 async def get_user_items(user_id: int) -> list[dict]:

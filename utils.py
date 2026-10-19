@@ -30,3 +30,21 @@ def get_steam_app_id(url: str) -> int | None:
         return None
 
     return int(match.group(1))
+
+
+def format_price(price: int, currency: str = "RUB") -> str:
+    """
+    Преобразует цену из копеек
+    в удобную для пользователя строку.
+    """
+
+    if currency != "RUB":
+        raise ValueError(f"Неподдерживаемая валюта: {currency}")
+
+    rub = price // 100
+    kop = price % 100
+
+    if kop == 0:
+        return f"{rub:,} ₽".replace(",", " ")
+
+    return f"{rub:,}.{kop:02d} ₽".replace(",", " ")

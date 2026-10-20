@@ -13,7 +13,7 @@ from database import (
     get_item_by_app_id
     )
 from keyboards import get_items_keyboard
-from utils import get_steam_app_id
+from utils import get_steam_app_id, format_price
 
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -156,7 +156,7 @@ async def handle_steam_link(message: types.Message):
 
     
     # 3. Вызываем нашу функцию парсера
-    title, price = await get_steam_price(url)
+    title, price, currency = await get_steam_price(steam_app_id)
 
     await add_user(
         user_id=message.from_user.id, 
@@ -165,21 +165,27 @@ async def handle_steam_link(message: types.Message):
         )
     
     # 4. В зависимости от результата ИЗМЕНЯЕМ наше сообщение-заглушку
-    if title and price:
+    if title and price is not None and currency == "RUB":
         # СОХРАНЯЕМ ТОВАР В БД
-        await add_item(
+        added = await add_item(
             user_id = message.from_user.id, 
             url = url, 
             name = title,
             last_price = price,
+            currency=currency,
             steam_app_id = steam_app_id
             )
-        await wait_msg.edit_text(
-            f"✅ Товар найден и добавлен в базу!\n"
-            f"Название: {title}\n"
-            f"Текущая цена: {price}\n\n"
-            f"💰 Теперь я буду проверять её каждый день."
-            )
+        if added:
+            await wait_msg.edit_text(
+                f"✅ Товар найден и добавлен в базу!\n"
+                f"Название: {title}\n"
+                f"Текущая цена: {format_price(price, currency)}\n\n"
+                f"💰 Теперь я буду проверять её каждый день."
+                )
+        else:
+            await wait_msg.edit_text(
+                "⚠️ Эта игра уже находится в отслеживании."
+                )
     else:
         await wait_msg.edit_text(
             "❌ Не удалось получить цену. Проверь ссылку или попробуй другую."

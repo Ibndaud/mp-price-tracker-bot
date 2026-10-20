@@ -40,17 +40,15 @@ async def init_db():
                 user_id INTEGER NOT NULL,
                 url TEXT NOT NULL,
                 name TEXT,
-                last_price TEXT,
+                last_price INTEGER,
+                currency TEXT NOT NULL DEFAULT 'RUB',
                 steam_app_id INTEGER NOT NULL,
-                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                UNIQUE(user_id, steam_app_id)
             )
         ''')
         await db.execute('''
             CREATE INDEX IF NOT EXISTS idx_items_user_id ON items(user_id);
-        ''')
-        await db.execute('''
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_user_steam_app
-            ON items(user_id, steam_app_id);
         ''')
         
         # Сохраняем (коммитим) изменения в файл
@@ -70,17 +68,23 @@ async def add_user(user_id: int, username: str, first_name: str):
 
 
 async def add_item(
-        user_id: int, url: str, name: str, last_price: str, steam_app_id: int
+        user_id: int, 
+        url: str, 
+        name: str, 
+        last_price: int, 
+        currency: str, 
+        steam_app_id: int
         ) -> bool:
     """Добавляет новую ссылку на товар для конкретного пользователя"""
     async with aiosqlite.connect(DB_NAME) as db:
         cursor = await db.execute(
             '''
-            INSERT OR IGNORE INTO items 
-            (user_id, url, name, last_price, steam_app_id) 
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO items 
+            (user_id, url, name, last_price, currency, steam_app_id) 
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, steam_app_id) DO NOTHING
             ''',
-            (user_id, url, name, last_price, steam_app_id)
+            (user_id, url, name, last_price, currency, steam_app_id)
         )
         await db.commit()
         return cursor.rowcount > 0
@@ -98,7 +102,7 @@ async def get_user_items(user_id: int) -> list[dict]:
 
         async with db.execute(
             '''
-            SELECT id, name, url, last_price
+            SELECT id, name, url, last_price, currency, steam_app_id
             FROM items
             WHERE user_id = ?
             ORDER BY id

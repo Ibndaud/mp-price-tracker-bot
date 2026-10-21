@@ -1,5 +1,6 @@
 import aiosqlite
 import logging
+from utils import get_db_connection
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ async def init_db():
     Эту функцию мы будем вызывать при старте бота.
     """
     # Открываем асинхронное соединение с файлом БД
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with get_db_connection(DB_NAME) as db:
         
         # 1. Таблица пользователей
         # id - уникальный номер пользователя в Telegram (PRIMARY KEY значит, что он не может повторяться)
@@ -58,10 +59,16 @@ async def init_db():
 
 async def add_user(user_id: int, username: str, first_name: str):
     """Добавляет пользователя в БД, если его там еще нет"""
-    async with aiosqlite.connect(DB_NAME) as db:
-        # INSERT OR IGNORE означает: "Вставь данные, а если такой id уже есть - просто проигнорируй и не выдавай ошибку"
+    async with get_db_connection(DB_NAME) as db:
         await db.execute(
-            'INSERT OR IGNORE INTO users (id, username, first_name) VALUES (?, ?, ?)',
+            """
+            INSERT INTO users (id, username, first_name) 
+            VALUES (?, ?, ?)
+
+            ON CONFLICT(id) DO UPDATE 
+            SET username = excluded.username,
+                first_name = excluded.first_name
+            """,
             (user_id, username, first_name)
         )
         await db.commit()
@@ -76,7 +83,7 @@ async def add_item(
         steam_app_id: int
         ) -> bool:
     """Добавляет новую ссылку на товар для конкретного пользователя"""
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with get_db_connection(DB_NAME) as db:
         cursor = await db.execute(
             '''
             INSERT INTO items 
@@ -95,7 +102,7 @@ async def get_user_items(user_id: int) -> list[dict]:
     Возвращает список товаров пользователя.
     Каждый товар — словарь {id, name, url, last_price}
     """
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with get_db_connection(DB_NAME) as db:
         # row_factory превращает строки результата в объекты-словари
         # Без этого пришлось бы обращаться по индексам: row[0], row[1]...
         db.row_factory = aiosqlite.Row
@@ -119,7 +126,7 @@ async def delete_item(item_id: int, user_id: int) -> bool:
     Удаляет товар с указанными id товара и пользователя.
     Возвращает True если удаление прошло успешно.
     """
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with get_db_connection(DB_NAME) as db:
         cursor = await db.execute(
             '''
             DELETE FROM items
@@ -136,7 +143,7 @@ async def delete_item(item_id: int, user_id: int) -> bool:
 
 async def get_item_by_app_id(user_id: int, steam_app_id: int) -> dict | None:
 
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with get_db_connection(DB_NAME) as db:
 
         db.row_factory = aiosqlite.Row
 
@@ -159,7 +166,7 @@ async def db_update_price(
         last_price: int, 
         steam_app_id: int
         ) -> bool:
-    async with aiosqlite.connect(DB_NAME) as db:
+    async with get_db_connection(DB_NAME) as db:
         cursor = await db.execute(
             """
             UPDATE items

@@ -1,5 +1,7 @@
 import re
+import aiosqlite
 from urllib.parse import urlparse
+from contextlib import asynccontextmanager
 
 
 def get_steam_app_id(url: str) -> int | None:
@@ -73,3 +75,14 @@ def format_items_list(items: list[dict]) -> str:
     text += "Нажми на кнопку ниже, чтобы удалить игру."
 
     return text
+
+
+@asynccontextmanager
+async def get_db_connection(db_name):
+    db = await aiosqlite.connect(db_name)
+    try:
+        await db.execute("PRAGMA foreign_keys = ON")
+        await db.execute("PRAGMA busy_timeout = 5000")
+        yield db
+    finally:
+        await db.close()

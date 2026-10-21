@@ -152,7 +152,26 @@ async def get_item_by_app_id(user_id: int, steam_app_id: int) -> dict | None:
             row = await cursor.fetchone()
 
             return dict(row) if row else None
-        
+
+
+async def db_update_price(
+        user_id: int, 
+        last_price: int, 
+        steam_app_id: int
+        ) -> bool:
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute(
+            """
+            UPDATE items
+            SET last_price = ?
+            WHERE user_id = ?
+            AND steam_app_id = ?
+            """,
+            (last_price, user_id, steam_app_id)
+            )
+        await db.commit()
+        return cursor.rowcount > 0
+
         
 # Блок для ручного тестирования
 if __name__ == "__main__":

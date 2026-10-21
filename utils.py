@@ -48,3 +48,28 @@ def format_price(price: int, currency: str = "RUB") -> str:
         return f"{rub:,} ₽".replace(",", " ")
 
     return f"{rub:,}.{kop:02d} ₽".replace(",", " ")
+
+
+def format_items_list(items: list[dict]) -> str:
+    text = "📋 Твои отслеживаемые игры:\n\n"
+
+    for item in items:
+        name = item['name'] or "Без названия"
+
+        price = item['last_price']
+
+        price_text = (
+            format_price(price, item['currency'])
+            if price is not None
+            else "Цена недоступна"
+        )
+
+        text += (
+            f"🎮 {name}\n"
+            f"💰 {price_text}\n"
+            f"🔗 {item['url']}\n\n"
+        )
+
+    text += "Нажми на кнопку ниже, чтобы удалить игру."
+
+    return text

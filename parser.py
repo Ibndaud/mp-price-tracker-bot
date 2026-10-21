@@ -106,7 +106,7 @@ async def main():
     
     title, price, currency = await get_steam_price(get_steam_app_id(test_url))
     
-    if title and price and currency:
+    if title and price is not None and currency:
         print(f"Ура! 🎮 На игру: {title} 💰 текущая цена: {price / 100:.2f}  и валюта: {currency}")
     else:
         print("Не удалось найти цену. Возможно, изменилась верстка сайта.")

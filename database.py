@@ -57,7 +57,7 @@ async def init_db():
         logger.info("База данных успешно инициализирована!")
 
 
-async def add_user(user_id: int, username: str, first_name: str):
+async def add_user(user_id: int, username: str | None, first_name: str):
     """Добавляет пользователя в БД, если его там еще нет"""
     async with get_db_connection(DB_NAME) as db:
         await db.execute(

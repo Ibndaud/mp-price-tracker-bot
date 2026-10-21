@@ -58,6 +58,10 @@ async def get_steam_price(
 
         game = app_data.get("data", {})
         title = game.get("name")
+
+        if game.get("is_free"):
+            return title, 0, "RUB"
+        
         price_info = game.get("price_overview")
 
         if not price_info:

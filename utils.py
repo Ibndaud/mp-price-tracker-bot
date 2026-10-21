@@ -13,7 +13,7 @@ def get_steam_app_id(url: str) -> int | None:
     413150
     """
 
-    parsed_url = urlparse(url)
+    parsed_url = urlparse(url.lower())
 
     if (
         parsed_url.scheme != "https"

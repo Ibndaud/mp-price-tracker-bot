@@ -212,7 +212,10 @@ async def main():
     await init_db()
     print("Бот запущен!")
     # Запускаем постоянный опрос серверов Telegram (есть ли для нас новые сообщения?)
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await bot.session.close()
 
 
 # Точка входа в программу

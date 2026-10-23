@@ -14,8 +14,11 @@ from database import (
     )
 from keyboards import get_items_keyboard
 from utils import get_steam_app_id, format_price, format_items_list
+from price_checker import check_prices
+
 
 load_dotenv()
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN не найден в .env")
@@ -90,6 +93,19 @@ async def handle_list(message: types.Message):
     keyboard = get_items_keyboard(items)
 
     await message.answer(text, reply_markup=keyboard)
+
+
+@dp.message(Command("check"))
+async def handle_check(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer(
+            "⛔ Эта команда доступна только администратору."
+        )
+        return
+
+    await message.answer("🔄 Запускаю проверку цен...")
+    await check_prices(bot)
+    await message.answer("✅ Проверка цен завершена!")
 
 
 # 4. Команда /delete

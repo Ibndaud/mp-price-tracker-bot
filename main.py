@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import CallbackQuery
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from parser import get_steam_price
 from database import (
@@ -224,13 +225,29 @@ async def handle_other_messages(message: types.Message):
 
 # Функция запуска бота
 async def main():
-    print("Инициализация базы данных...")
+    logging.info("Инициализация базы данных...")
     await init_db()
-    print("Бот запущен!")
+
+    scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
+    scheduler.add_job(
+        check_prices,
+        trigger="cron",
+        hour=12,
+        minute=0,
+        args=[bot],
+        id="daily_price_check",
+        max_instances=1,
+        coalesce=True
+        )
+    scheduler.start()
+    logging.info("Планировщик запущен. Проверка цен каждый день в 12:00.")
+
+    logging.info("Бот запущен!")
     # Запускаем постоянный опрос серверов Telegram (есть ли для нас новые сообщения?)
     try:
         await dp.start_polling(bot)
     finally:
+        scheduler.shutdown(wait=False)
         await bot.session.close()
 
 

@@ -20,13 +20,15 @@ async def init_db():
         # id - уникальный номер пользователя в Telegram (PRIMARY KEY значит, что он не может повторяться)
         # username - его никнейм в Телеграме (может быть пустым)
         # first_name - имя
-        await db.execute('''
+        await db.execute(
+            '''
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY,
                 username TEXT,
                 first_name TEXT
+                )
+            '''
             )
-        ''')
         
         # 2. Таблица отслеживаемых товаров
         # id - внутренний номер записи (автоматически увеличивается - AUTOINCREMENT)
@@ -35,7 +37,8 @@ async def init_db():
         # name - название товара (чтобы красиво писать в уведомлении)
         # last_price - последняя известная цена (может быть пустой - NULL, пока мы её не спарсили)
         # steam_app_id - уникальный идентификатор игры в steam, получаемый из url
-        await db.execute('''
+        await db.execute(
+            '''
             CREATE TABLE IF NOT EXISTS items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -46,11 +49,34 @@ async def init_db():
                 steam_app_id INTEGER NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
                 UNIQUE(user_id, steam_app_id)
+                )
+            '''
             )
-        ''')
-        await db.execute('''
-            CREATE INDEX IF NOT EXISTS idx_items_user_id ON items(user_id);
-        ''')
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_items_user_id ON items(user_id);'
+            )
+
+        # Новая таблица — журнал всех изменений цены
+        # Одна запись = одно значение цены в конкретный момент времени
+        await db.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS price_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id INTEGER NOT NULL,
+                price INTEGER NOT NULL,
+                currency TEXT NOT NULL DEFAULT 'RUB',
+                checked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE CASCADE
+                )
+            '''
+            )
+
+        await db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_price_history_item_id
+                ON price_history(item_id, checked_at);
+            """
+            )
         
         # Сохраняем (коммитим) изменения в файл
         await db.commit()
@@ -178,6 +204,90 @@ async def db_update_price(
             )
         await db.commit()
         return cursor.rowcount > 0
+
+
+async def add_price_history(item_id: int, price: int, currency: str):
+    """
+    Сохраняет результат проверки цены.
+    """
+    async with get_db_connection(DB_NAME) as db:
+        await db.execute(
+            """
+            INSERT INTO price_history (
+                item_id,
+                price,
+                currency
+                )
+            VALUES (?, ?, ?)
+            """,
+            (item_id, price, currency)
+            )
+        await db.commit()
+
+
+async def get_all_items() -> list[dict]:
+    """
+    Возвращает все отслеживаемые товары
+    всех пользователей.
+    """
+    async with get_db_connection(DB_NAME) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """
+            SELECT
+                id,
+                user_id,
+                steam_app_id,
+                name,
+                url,
+                last_price,
+                currency
+            FROM items
+            """
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+
+async def save_price_check(item_id: int, price: int, currency: str) -> bool:
+    """
+    Обновляет последнюю цену товара
+    и сохраняет запись истории.
+
+    Оба действия выполняются в одной транзакции.
+    """
+    async with get_db_connection(DB_NAME) as db:
+        try:
+            cursor = await db.execute(
+                """
+                UPDATE items
+                SET last_price = ?,
+                    currency = ?
+                WHERE id = ?
+                """,
+                (price, currency, item_id)
+                )
+            if cursor.rowcount == 0:
+                await db.rollback()
+                return False
+
+            await db.execute(
+                """
+                INSERT INTO price_history (
+                    item_id,
+                    price,
+                    currency
+                    )
+                VALUES (?, ?, ?)
+                """,
+                (item_id, price, currency)
+                )
+            await db.commit()
+            return True
+
+        except Exception:
+            await db.rollback()
+            raise
 
         
 # Блок для ручного тестирования

@@ -38,10 +38,11 @@ jobs:
       - name: Установить зависимости из uv.lock
         run: uv sync
 
-      - name: Проверить синтаксис всех модулей
-        run: uv run python -m compileall main.py parser.py database.py keyboards.py utils.py migrate.py
+      # Точка вместо списка файлов: новые модули попадают в CI автоматически.
+      - name: Проверить синтаксис всех файлов
+        run: uv run python -m compileall .
 
       - name: Импортировать модули бота
         env:
           BOT_TOKEN: "123456:ci-smoke"
-        run: uv run python -c "import utils, parser, database, keyboards, main"
+        run: uv run python -c "import utils, parser, database, keyboards, main, price_checker"

@@ -459,7 +459,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "aiogram", specifier = ">=3.31.0" },
-    { name = "aiohttp", specifier = ">=3.14.5" },
+    { name = "aiohttp", specifier = ">=3.14" },
     { name = "aiosqlite", specifier = ">=0.22.1" },
     { name = "apscheduler", specifier = ">=3.10,<4" },
     { name = "beautifulsoup4", specifier = ">=4.13" },

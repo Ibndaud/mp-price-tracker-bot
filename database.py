@@ -147,6 +147,28 @@ async def get_user_items(user_id: int) -> list[dict]:
             return [dict(row) for row in rows]
 
 
+async def get_all_items() -> list[dict]:
+    """
+    Возвращает все отслеживаемые товары
+    всех пользователей.
+    """
+
+    async with get_db_connection(DB_NAME) as db:
+
+        db.row_factory = aiosqlite.Row
+
+        async with db.execute(
+            """
+            SELECT id, user_id, steam_app_id, name, url, last_price, currency
+            FROM items
+            """
+        ) as cursor:
+
+            rows = await cursor.fetchall()
+
+            return [dict(row) for row in rows]
+        
+
 async def delete_item(item_id: int, user_id: int) -> bool:
     """
     Удаляет товар с указанными id товара и пользователя.
@@ -223,30 +245,6 @@ async def add_price_history(item_id: int, price: int, currency: str):
             (item_id, price, currency)
             )
         await db.commit()
-
-
-async def get_all_items() -> list[dict]:
-    """
-    Возвращает все отслеживаемые товары
-    всех пользователей.
-    """
-    async with get_db_connection(DB_NAME) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """
-            SELECT
-                id,
-                user_id,
-                steam_app_id,
-                name,
-                url,
-                last_price,
-                currency
-            FROM items
-            """
-        ) as cursor:
-            rows = await cursor.fetchall()
-            return [dict(row) for row in rows]
 
 
 async def save_price_check(item_id: int, price: int, currency: str) -> bool:

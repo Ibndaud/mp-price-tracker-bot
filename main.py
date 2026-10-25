@@ -14,7 +14,7 @@ from database import (
     get_item_by_app_id, record_price_update
     )
 from keyboards import get_items_keyboard
-from utils import get_steam_app_id, format_price, format_items_list
+from utils import get_steam_app_id, format_price, paginate, format_items_page
 from price_checker import check_prices
 
 
@@ -23,6 +23,9 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN не найден в .env")
+
+PAGE_SIZE = 5
+
 
 # Включаем логирование.
 # Это позволит видеть в терминале всё, что происходит с ботом (ошибки, входящие сообщения).
@@ -70,30 +73,42 @@ async def handle_help(message: types.Message):
 @dp.message(Command("list"))
 async def handle_list(message: types.Message):
     user_id = message.from_user.id
-    items = await get_user_items(user_id)
+    result = await render_items_page(user_id, page=1)
 
     # Если список пустой — сразу говорим об этом и выходим
-    if not items:
+    if result is None:
         await message.answer(
             "📭 У тебя пока нет отслеживаемых игр.\n"
             "Пришли ссылку на Steam, чтобы добавить первую! 🎮"
         )
         return
 
-    # Обновляем отсутствующие цены ДО форматирования
-    for item in items:
-        if item['last_price'] is None:
-            price = await handle_none_price(item['id'], item['steam_app_id'])
-            if price is not None:
-                item['last_price'] = price
-
-    # Форматируем уже подготовленные данные
-    text = format_items_list(items)
-
-    # Строим клавиатуру с кнопками удаления
-    keyboard = get_items_keyboard(items)
-
+    # Форматируем уже подготовленные данные и строим клавиатуру с кнопками удаления
+    text, keyboard = result
     await message.answer(text, reply_markup=keyboard)
+
+
+@dp.callback_query(F.data.startswith("page_"))
+async def handle_page_callback(callback: CallbackQuery):
+    """Переключение между страницами списка."""
+    page = int(callback.data.split("_")[1])
+
+    result = await render_items_page(callback.from_user.id, page)
+
+    if result is None:
+        await callback.message.edit_text("📭 Список пуст.")
+        await callback.answer()
+        return
+
+    text, keyboard = result
+    await callback.message.edit_text(text, reply_markup=keyboard)
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "noop")
+async def handle_noop_callback(callback: CallbackQuery):
+    """Кнопка-индикатор страницы — просто убираем 'крутилку' загрузки."""
+    await callback.answer()
 
 
 @dp.message(Command("check"))
@@ -113,9 +128,11 @@ async def handle_check(message: types.Message):
 @dp.callback_query(F.data.startswith("delete_"))
 async def handle_delete_callback(callback: CallbackQuery):
     # callback.data — это та самая строка "delete_5" которую мы задавали
-    # Разбиваем по "_" и берём вторую часть — число
-    item_id = int(callback.data.split("_")[1])
-
+    # Формат callback_data: "delete_{tracking_id}_{page}"
+    _, item_id_str, page_str = callback.data.split("_")
+    item_id = int(item_id_str)
+    page = int(page_str)
+    
     # Удаляем товар, проверяя что он принадлежит именно этому пользователю
     success = await delete_item(item_id, callback.from_user.id)
 
@@ -127,17 +144,17 @@ async def handle_delete_callback(callback: CallbackQuery):
     await callback.answer("✅ Товар удалён!")
         
     # Обновляем список — получаем свежие данные без удалённого товара
-    items = await get_user_items(callback.from_user.id)
+    # items = await get_user_items(callback.from_user.id)
+    items = await render_items_page(callback.from_user.id, page)
 
-    if not items:
+    if items is None:
         # Если товаров больше нет — меняем текст сообщения
         await callback.message.edit_text(
             "📭 Список пуст. Пришли ссылку на Steam чтобы добавить игру! 🎮"
-        )
+            )
     else:
         # Пересобираем текст и клавиатуру с оставшимися товарами
-        text = format_items_list(items)            
-        keyboard = get_items_keyboard(items)
+        text, keyboard = items
         await callback.message.edit_text(text, reply_markup=keyboard)
 
 
@@ -229,6 +246,29 @@ async def handle_other_messages(message: types.Message):
         "Пока я понимаю только ссылки на Steam (steampowered.com). "
         "Пришли мне ссылку!"
         )
+
+
+async def render_items_page(user_id: int, page: int):
+    """
+    Готовит текст + клавиатуру для конкретной страницы списка.
+    Возвращает None если у пользователя вообще нет отслеживаемых игр.
+    """
+    items = await get_user_items(user_id)
+
+    if not items:
+        return None
+
+    for item in items:
+        if item['last_price'] is None:
+            price = await handle_none_price(item['id'], item['steam_app_id'])
+            if price is not None:
+                item['last_price'] = price
+
+    page_items, total_pages, page = paginate(items, page, PAGE_SIZE)
+    text = format_items_page(page_items, page, total_pages, len(items))
+    keyboard = get_items_keyboard(page_items, page, total_pages)
+
+    return text, keyboard
 
 
 # Функция запуска бота

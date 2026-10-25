@@ -11,7 +11,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from parser import get_steam_price
 from database import (
     init_db, add_user, add_item, get_user_items, delete_item, 
-    get_item_by_app_id, db_update_price
+    get_item_by_app_id, record_price_update
     )
 from keyboards import get_items_keyboard
 from utils import get_steam_app_id, format_price, format_items_list
@@ -163,9 +163,9 @@ async def handle_steam_link(message: types.Message):
             f"⚠️ Игра {existing_item['name']} уже отслеживается!"
             )
         return
-    else:
-        # Отправляем сообщение-заглушку, чтобы пользователь знал, что бот не завис
-        wait_msg = await message.answer("⏳ Проверяю цену, подожди пару секунд...")
+
+    # Отправляем сообщение-заглушку, чтобы пользователь знал, что бот не завис
+    wait_msg = await message.answer("⏳ Проверяю цену, подожди пару секунд...")
 
     
     # 3. Вызываем нашу функцию парсера
@@ -178,37 +178,45 @@ async def handle_steam_link(message: types.Message):
         )
     
     # 4. В зависимости от результата ИЗМЕНЯЕМ наше сообщение-заглушку
-    if title and price is not None and currency == "RUB":
-        # СОХРАНЯЕМ ТОВАР В БД
-        added = await add_item(
-            user_id = message.from_user.id, 
-            url = url, 
-            name = title,
-            last_price = price,
-            currency=currency,
-            steam_app_id = steam_app_id
-            )
-        if added:
-            await wait_msg.edit_text(
-                f"✅ Товар найден и добавлен в базу!\n"
-                f"Название: {title}\n"
-                f"Текущая цена: {format_price(price, currency)}\n\n"
-                f"💰 Теперь я буду проверять её каждый день."
-                )
-        else:
-            await wait_msg.edit_text(
-                "⚠️ Эта игра уже находится в отслеживании."
-                )
-    else:
+    if not (title and price is not None and currency == "RUB"):
         await wait_msg.edit_text(
             "❌ Не удалось получить цену. Проверь ссылку или попробуй другую."
             )
+        return
+
+    # СОХРАНЯЕМ ТОВАР В БД
+    item_id = await add_item(
+        user_id = message.from_user.id, 
+        url = url, 
+        name = title,
+        last_price = price,
+        currency=currency,
+        steam_app_id = steam_app_id
+        )
+
+    if not item_id:
+        await wait_msg.edit_text(
+            "⚠️ Эта игра уже находится в отслеживании."
+            )
+        return
+
+    await wait_msg.edit_text(
+        f"✅ Товар найден и добавлен в базу!\n"
+        f"Название: {title}\n"
+        f"Текущая цена: {format_price(price, currency)}\n\n"
+        f"💰 Теперь я буду проверять её каждый день."
+        )
 
 
-async def handle_none_price(user_id, steam_app_id):
+async def handle_none_price(item_id: int, steam_app_id: int) -> int | None:
+    """
+    Пытается получить актуальную цену для товара,
+    у которого last_price почему-то оказался NULL
+    (например, при добавлении была временная ошибка Steam API).
+    """
     title, price, currency = await get_steam_price(steam_app_id)
     if price is not None and currency == "RUB":
-        await db_update_price(user_id, price, steam_app_id)
+        await record_price_update(item_id, price, currency)
 
         return price
     return None
@@ -228,16 +236,22 @@ async def main():
     logging.info("Инициализация базы данных...")
     await init_db()
 
+    # Создаём планировщик — он будет работать в фоне,
+    # не блокируя приём сообщений от пользователей
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
     scheduler.add_job(
         check_prices,
         trigger="cron",
         hour=12,
         minute=0,
-        args=[bot],
+        # trigger="interval",   # ← временно для теста
+        # minutes=2,            # ← временно для теста
+        args=(bot,),
         id="daily_price_check",
         max_instances=1,
-        coalesce=True
+        coalesce=True,
+        misfire_grace_time=3600,  # Если бот был выключен в момент запуска задачи —
+                                   # выполнить её при следующем старте, если прошло не больше часа
         )
     scheduler.start()
     logging.info("Планировщик запущен. Проверка цен каждый день в 12:00.")

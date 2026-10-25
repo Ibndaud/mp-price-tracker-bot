@@ -107,20 +107,45 @@ async def add_item(
         last_price: int, 
         currency: str, 
         steam_app_id: int
-        ) -> bool:
+        ) -> int | None:
     """Добавляет новую ссылку на товар для конкретного пользователя"""
     async with get_db_connection(DB_NAME) as db:
-        cursor = await db.execute(
-            '''
-            INSERT INTO items 
-            (user_id, url, name, last_price, currency, steam_app_id) 
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(user_id, steam_app_id) DO NOTHING
-            ''',
-            (user_id, url, name, last_price, currency, steam_app_id)
-        )
-        await db.commit()
-        return cursor.rowcount > 0
+        try:
+            cursor = await db.execute(
+                '''
+                INSERT INTO items 
+                (user_id, url, name, last_price, currency, steam_app_id) 
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, steam_app_id) DO NOTHING
+                ''',
+                (user_id, url, name, last_price, currency, steam_app_id)
+                )
+            # Если rowcount == 0 — ON CONFLICT сработал, строка не вставилась
+            # Значит игра уже была в базе — выходим без лишней записи в историю
+            if cursor.rowcount == 0:
+                await db.rollback()
+                return
+            
+            # lastrowid — id только что вставленного товара
+            item_id = cursor.lastrowid
+
+            # Сразу пишем первую точку истории —
+            # цену на момент добавления игры в отслеживание
+            await db.execute(
+                '''
+                INSERT INTO price_history (item_id, price, currency)
+                VALUES (?, ?, ?)
+                ''',
+                (item_id, last_price, currency)
+                )
+
+            # Коммитим ОБЕ вставки одновременно — это и есть атомарность
+            await db.commit()
+            return item_id
+        
+        except Exception:
+            await db.rollback()
+            raise
 
 
 async def get_user_items(user_id: int) -> list[dict]:
@@ -149,23 +174,18 @@ async def get_user_items(user_id: int) -> list[dict]:
 
 async def get_all_items() -> list[dict]:
     """
-    Возвращает все отслеживаемые товары
-    всех пользователей.
+    Возвращает список ВСЕХ отслеживаемых товаров ВСЕХ пользователей.
+    Используется планировщиком — проверяет цены для каждой записи.
     """
-
     async with get_db_connection(DB_NAME) as db:
-
         db.row_factory = aiosqlite.Row
-
         async with db.execute(
             """
             SELECT id, user_id, steam_app_id, name, url, last_price, currency
             FROM items
             """
         ) as cursor:
-
             rows = await cursor.fetchall()
-
             return [dict(row) for row in rows]
         
 
@@ -228,6 +248,36 @@ async def db_update_price(
         return cursor.rowcount > 0
 
 
+async def record_price_update(item_id: int, new_price: int, currency: str) -> bool:
+    """
+    Обновляет текущую цену товара (items.last_price)
+    и одновременно добавляет точку в историю (price_history).
+
+    Используется и планировщиком при плановой проверке,
+    и вручную — например когда обнаруживаем товар с неизвестной ценой.
+    """
+    async with get_db_connection(DB_NAME) as db:
+        cursor = await db.execute(
+            "UPDATE items SET last_price = ? WHERE id = ?",
+            (new_price, item_id)
+            )
+
+        # Если rowcount == 0 — товара с таким id не существует
+        if cursor.rowcount == 0:
+            await db.commit()
+            return False
+
+        await db.execute(
+            '''
+            INSERT INTO price_history (item_id, price, currency)
+            VALUES (?, ?, ?)
+            ''',
+            (item_id, new_price, currency)
+            )
+
+        await db.commit()
+        return True
+
 async def add_price_history(item_id: int, price: int, currency: str):
     """
     Сохраняет результат проверки цены.
@@ -287,6 +337,26 @@ async def save_price_check(item_id: int, price: int, currency: str) -> bool:
             await db.rollback()
             raise
 
+
+async def get_price_history(item_id: int) -> list[dict]:
+    """
+    Возвращает всю историю цен товара в хронологическом порядке
+    (от старых записей к новым), для построения графика через matplotlib.
+    """
+    async with get_db_connection(DB_NAME) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            '''
+            SELECT price, currency, recorded_at
+            FROM price_history
+            WHERE item_id = ?
+            ORDER BY recorded_at ASC
+            ''',
+            (item_id,)
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+        
         
 # Блок для ручного тестирования
 if __name__ == "__main__":

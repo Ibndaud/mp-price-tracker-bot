@@ -83,7 +83,7 @@ async def handle_list(message: types.Message):
     # Обновляем отсутствующие цены ДО форматирования
     for item in items:
         if item['last_price'] is None:
-            price = await handle_none_price(user_id, item['steam_app_id'])
+            price = await handle_none_price(item['id'], item['steam_app_id'])
             if price is not None:
                 item['last_price'] = price
 

@@ -347,10 +347,10 @@ async def get_price_history(item_id: int) -> list[dict]:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             '''
-            SELECT price, currency, recorded_at
+            SELECT price, currency, checked_at
             FROM price_history
             WHERE item_id = ?
-            ORDER BY recorded_at ASC
+            ORDER BY checked_at ASC, id ASC
             ''',
             (item_id,)
         ) as cursor:
